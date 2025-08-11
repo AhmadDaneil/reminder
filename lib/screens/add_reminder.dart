@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:reminder/screens/home.dart';
+import 'package:reminder/services/ad_helper.dart';
 import 'package:reminder/services/settings_provider.dart';
 import 'package:reminder/services/database_helper.dart';
 import 'package:reminder/services/reminder_model.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
 
 class AddReminder extends StatefulWidget {
   const AddReminder({super.key});
@@ -15,6 +17,28 @@ class AddReminder extends StatefulWidget {
 class _AddReminderState extends State<AddReminder> {
   final _titleController = TextEditingController();
   final _notesController = TextEditingController();
+  InterstitialAd ? _interstitialAd;
+  
+  @override
+  void initState () {
+    super.initState();
+    InterstitialAd.load(
+      adUnitId: AdHelper.getInterstatialAdUnitId,
+      request: AdRequest(),
+      adLoadCallback: InterstitialAdLoadCallback(
+        onAdLoaded: (ad) {
+          ad.fullScreenContentCallback = FullScreenContentCallback(
+            onAdDismissedFullScreenContent: (ad){}
+          );
+          setState(() {
+            _interstitialAd = ad;
+          });
+        },
+         onAdFailedToLoad: (err) {
+          print('Failed to loads ad: ${err.message}');
+         }),);
+  }
+  
 
   DateTime? _selectedDate;
   TimeOfDay? _selectedTime;
@@ -150,7 +174,10 @@ class _AddReminderState extends State<AddReminder> {
             ),
             const SizedBox(height: 20),
             ElevatedButton.icon(
-              onPressed: _saveReminder,
+              onPressed: () async {
+                await _interstitialAd?.show();
+                await _saveReminder();
+                },
               icon: const Icon(Icons.save),
               label: const Text('Save Reminder'),
               style: ElevatedButton.styleFrom(
