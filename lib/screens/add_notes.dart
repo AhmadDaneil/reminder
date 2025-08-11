@@ -14,139 +14,131 @@ class AddNotes extends StatefulWidget {
 }
 
 class _AddNotesState extends State<AddNotes> {
-  InterstitialAd? _interstitialAd2;
+  InterstitialAd? _interstitialAd;
+  bool _isAdShowing = false;
+
+  final TextEditingController _titleController = TextEditingController();
+  final TextEditingController _contentController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
+    _loadInterstitialAd();
+  }
+
+  void _loadInterstitialAd() {
     InterstitialAd.load(
       adUnitId: AdHelper.getInterstatialAdUnitId2,
-      request: AdRequest(),
+      request: const AdRequest(),
       adLoadCallback: InterstitialAdLoadCallback(
         onAdLoaded: (ad) {
           ad.fullScreenContentCallback = FullScreenContentCallback(
-            onAdDismissedFullScreenContent: (ad){},
+            onAdShowedFullScreenContent: (_) {
+              setState(() => _isAdShowing = true);
+            },
+            onAdDismissedFullScreenContent: (ad) {
+              setState(() => _isAdShowing = false);
+              ad.dispose();
+              _saveNote(); // Save after ad finishes
+            },
+            onAdFailedToShowFullScreenContent: (ad, error) {
+              ad.dispose();
+              setState(() => _isAdShowing = false);
+              _saveNote();
+            },
           );
-          setState(() {
-            _interstitialAd2 = ad;
-          });
+          _interstitialAd = ad;
         },
         onAdFailedToLoad: (err) {
-          print('Failed to loads ad: ${err.message}');
-         }
-      )
+          print('Failed to load interstitial ad: ${err.message}');
+          _interstitialAd = null;
+        },
+      ),
     );
+  }
+
+  void _saveNote() async {
+    final note = Note(
+      title: _titleController.text,
+      content: _contentController.text,
+      createdAt: DateTime.now().toIso8601String(),
+    );
+    await DatabaseHelper().insertNote(note);
+    Navigator.pop(context, true);
+  }
+
+  void _handleSave() {
+    if (_interstitialAd != null) {
+      _interstitialAd!.show();
+    } else {
+      _saveNote();
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final settings = Provider.of<SettingsProvider>(context);
-    final TextEditingController titleController = TextEditingController();
-    final TextEditingController contentController = TextEditingController();
 
-    return Scaffold(
-      backgroundColor: settings.backgroundColor,
-      appBar: AppBar(
-        backgroundColor: settings.appBarColor,
-        iconTheme: IconThemeData(color: settings.fontColor),
-        title: Text(
-          'Add Note',
-          style: TextStyle(color: settings.fontColor),
+    return WillPopScope(
+      onWillPop: () async {
+        // Prevent back press while ad is showing
+        return !_isAdShowing;
+      },
+      child: Scaffold(
+        backgroundColor: settings.backgroundColor,
+        appBar: AppBar(
+          backgroundColor: settings.appBarColor,
+          iconTheme: IconThemeData(color: settings.fontColor),
+          title: Text('Add Note', style: TextStyle(color: settings.fontColor)),
+          centerTitle: true,
+          elevation: 0,
         ),
-      centerTitle: true,
-      elevation: 0,
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            TextField(
-              controller: titleController,
-              style: TextStyle(
-                color: settings.fontColor,
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
+        body: SingleChildScrollView(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              TextField(
+                controller: _titleController,
+                style: TextStyle(
+                  color: settings.fontColor,
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                ),
+                decoration: InputDecoration(
+                  hintText: 'Title',
+                  hintStyle: TextStyle(color: settings.fontColor),
+                  border: InputBorder.none,
+                ),
               ),
-              decoration: InputDecoration(
-                hintText: 'Title',
-                hintStyle: TextStyle(color: settings.fontColor),
-                border: InputBorder.none,
-              ),
-            ),
-            const SizedBox(height: 20),
-            TextField(
-                controller: contentController,
+              const SizedBox(height: 20),
+              TextField(
+                controller: _contentController,
                 style: TextStyle(color: settings.fontColor, fontSize: 16),
                 maxLines: null,
-                expands: false,
                 keyboardType: TextInputType.multiline,
                 decoration: InputDecoration(
                   hintText: 'Write your note...',
-                  hintStyle: TextStyle(
-                    color: settings.fontColor
-                  ),
+                  hintStyle: TextStyle(color: settings.fontColor),
                   border: InputBorder.none,
                 ),
               ),
               const SizedBox(height: 24),
               ElevatedButton.icon(
-                onPressed: () async {
-                  if (_interstitialAd2 != null) {
-                    _interstitialAd2!.fullScreenContentCallback = FullScreenContentCallback(
-                      onAdDismissedFullScreenContent: (ad) async{
-                        ad.dispose();
-
-                    Note note = Note(
-                    title: titleController.text,
-                    content: contentController.text,
-                    createdAt: DateTime.now().toIso8601String(),
-                  );
-                  await DatabaseHelper().insertNote(note);
-                  Navigator.pop(context, true);
-                  },
-                  onAdFailedToShowFullScreenContent: (ad, error) {
-                  ad.dispose();
-                  // If ad fails, still save the note
-                  Note note = Note(
-                  title: titleController.text,
-                  content: contentController.text,
-                  createdAt: DateTime.now().toIso8601String(),
-                  );
-                  DatabaseHelper().insertNote(note).then((_) {
-                  Navigator.pop(context, true);
-                  });
-                  },
-                  );
-
-                  _interstitialAd2!.show();
-                  } else {
-                    Note note = Note(
-                    title: titleController.text,
-                    content: contentController.text,
-                    createdAt: DateTime.now().toIso8601String(),
-                      );
-                    DatabaseHelper().insertNote(note).then((_) {
-                    Navigator.pop(context, true);
-                    });
-                  }
-                  print("Saving note...");
-                  print("Title: ${titleController.text}");
-                  print("Content: $contentController.text");
-
-                 
-
-                  
-                }, 
-              icon: const Icon(Icons.save),
-              label: const Text("Save Note"),
-              style: ElevatedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-            ),
-            ),
-          ],
+                onPressed: _handleSave,
+                icon: const Icon(Icons.save),
+                label: const Text("Save Note"),
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 12,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
-        ),
-      );
+      ),
+    );
   }
 }

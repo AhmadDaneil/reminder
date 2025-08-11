@@ -4,8 +4,8 @@ import 'package:provider/provider.dart';
 import 'package:reminder/services/ad_helper.dart';
 import 'package:reminder/services/noti_service.dart';
 import 'package:reminder/services/settings_provider.dart';
+import 'package:reminder/services/reminder_provider.dart';
 import 'package:reminder/services/reminder_model.dart';
-import 'package:reminder/services/database_helper.dart';
 
 class Home extends StatefulWidget {
   const Home({super.key});
@@ -15,7 +15,6 @@ class Home extends StatefulWidget {
 }
 
 class _HomeState extends State<Home> {
-  List<Reminder> reminders = [];
   BannerAd? _bannerAd;
   BannerAd? _bannerAd2;
 
@@ -23,7 +22,12 @@ class _HomeState extends State<Home> {
   void initState() {
     super.initState();
     _loadAds();
-    _loadReminders();
+
+    // Ensure provider loads reminders after build (safe to access context)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final provider = context.read<ReminderProvider>();
+      provider.loadReminders();
+    });
   }
 
   void _loadAds() {
@@ -54,11 +58,26 @@ class _HomeState extends State<Home> {
     )..load();
   }
 
-  Future<void> _loadReminders() async {
-    final data = await DatabaseHelper().getReminders();
-    if (mounted) {
-      setState(() => reminders = data);
-    }
+  /// Delete using provider so it updates DB + in-memory list (UI updates automatically).
+  Future<void> _deleteReminder(Reminder reminder) async {
+    final provider = context.read<ReminderProvider>();
+
+    // Perform delete
+    await provider.deleteReminder(reminder);
+
+    // Show snackbar with Undo using provider.addReminder()
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('${reminder.title} deleted'),
+        action: SnackBarAction(
+          label: 'Undo',
+          onPressed: () async {
+            // Re-insert (addReminder will insert to DB and reload)
+            await provider.addReminder(reminder);
+          },
+        ),
+      ),
+    );
   }
 
   void _showReminderDialog(Reminder reminder) {
@@ -73,17 +92,13 @@ class _HomeState extends State<Home> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (reminder.content.isNotEmpty)
-              Text('Notes: ${reminder.content}'),
+            if (reminder.content.isNotEmpty) Text('Notes: ${reminder.content}'),
             const SizedBox(height: 8),
             Text('DateTime: ${reminder.dateTime}'),
           ],
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Back'),
-          ),
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Back')),
           TextButton(
             onPressed: () async {
               Navigator.pop(context);
@@ -92,28 +107,14 @@ class _HomeState extends State<Home> {
                 '/add_reminder',
                 arguments: reminder,
               );
-              if (result == true) _loadReminders();
+              // The add/edit screen now uses the provider, but reload if it returns true
+              if (result == true) {
+                context.read<ReminderProvider>().loadReminders();
+              }
             },
             child: const Text('Edit'),
           ),
         ],
-      ),
-    );
-  }
-
-  Future<void> _deleteReminder(Reminder reminder) async {
-    await DatabaseHelper().deleteReminder(reminder.id!);
-    _loadReminders();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('${reminder.title} deleted'),
-        action: SnackBarAction(
-          label: 'Undo',
-          onPressed: () async {
-            await DatabaseHelper().insertReminder(reminder);
-            _loadReminders();
-          },
-        ),
       ),
     );
   }
@@ -128,6 +129,8 @@ class _HomeState extends State<Home> {
   @override
   Widget build(BuildContext context) {
     final settings = Provider.of<SettingsProvider>(context);
+    final reminderProvider = context.watch<ReminderProvider>();
+    final reminders = reminderProvider.reminders;
 
     return Scaffold(
       appBar: AppBar(
@@ -155,6 +158,8 @@ class _HomeState extends State<Home> {
                 child: AdWidget(ad: _bannerAd2!),
               ),
             ),
+
+          // Main content
           reminders.isEmpty
               ? Center(
                   child: Text(
@@ -190,12 +195,14 @@ class _HomeState extends State<Home> {
       floatingActionButton: FloatingActionButton(
         onPressed: () async {
           final result = await Navigator.pushNamed(context, '/add_reminder');
-          if (result == true) _loadReminders();
+          if (result == true) {
+            // If add screen returned true, ensure provider reloads (though addReminder should already update)
+            await context.read<ReminderProvider>().loadReminders();
+          }
         },
         backgroundColor: settings.isDarkmode ? Colors.black : Colors.white,
         elevation: 30.0,
-        child: Icon(Icons.add,
-            color: settings.isDarkmode ? Colors.white : Colors.black),
+        child: Icon(Icons.add, color: settings.isDarkmode ? Colors.white : Colors.black),
       ),
       drawer: Drawer(
         child: ListView(
@@ -215,14 +222,12 @@ class _HomeState extends State<Home> {
     );
   }
 
-  Widget _buildDismissBg(Alignment alignment) {
-    return Container(
-      color: Colors.red,
-      alignment: alignment,
-      padding: const EdgeInsets.symmetric(horizontal: 20.0),
-      child: const Icon(Icons.delete, color: Colors.white),
-    );
-  }
+  Widget _buildDismissBg(Alignment alignment) => Container(
+        color: Colors.red,
+        alignment: alignment,
+        padding: const EdgeInsets.symmetric(horizontal: 20.0),
+        child: const Icon(Icons.delete, color: Colors.white),
+      );
 
   Widget _buildReminderCard(Reminder reminder, SettingsProvider settings) {
     return Card(
@@ -265,18 +270,14 @@ class _HomeState extends State<Home> {
               onPressed: () {
                 NotificationService.showOngoingNotification(
                   title: reminder.title,
-                  content: reminder.content.isNotEmpty
-                      ? reminder.content
-                      : 'Reminder is active',
+                  content: reminder.content.isNotEmpty ? reminder.content : 'Reminder is active',
                   dateTime: DateTime.parse(reminder.dateTime),
                 );
               },
             ),
             IconButton(
               icon: const Icon(Icons.stop, color: Colors.red),
-              onPressed: () {
-                NotificationService.cancelOngoingNotification();
-              },
+              onPressed: NotificationService.cancelOngoingNotification,
             ),
             IconButton(
               icon: const Icon(Icons.delete, color: Colors.red),
@@ -289,10 +290,8 @@ class _HomeState extends State<Home> {
     );
   }
 
-  Widget _buildDrawerItem(String title, VoidCallback onTap) {
-    return ListTile(
-      title: Text(title),
-      onTap: onTap,
-    );
-  }
+  Widget _buildDrawerItem(String title, VoidCallback onTap) => ListTile(
+        title: Text(title),
+        onTap: onTap,
+      );
 }

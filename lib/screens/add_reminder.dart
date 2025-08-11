@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:reminder/screens/home.dart';
 import 'package:reminder/services/ad_helper.dart';
 import 'package:reminder/services/settings_provider.dart';
-import 'package:reminder/services/database_helper.dart';
 import 'package:reminder/services/reminder_model.dart';
+import 'package:reminder/services/reminder_provider.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 
 class AddReminder extends StatefulWidget {
@@ -17,44 +16,48 @@ class AddReminder extends StatefulWidget {
 class _AddReminderState extends State<AddReminder> {
   final _titleController = TextEditingController();
   final _notesController = TextEditingController();
-  InterstitialAd ? _interstitialAd;
-  
-  @override
-  void initState () {
-    super.initState();
-    InterstitialAd.load(
-      adUnitId: AdHelper.getInterstatialAdUnitId,
-      request: AdRequest(),
-      adLoadCallback: InterstitialAdLoadCallback(
-        onAdLoaded: (ad) {
-          ad.fullScreenContentCallback = FullScreenContentCallback(
-            onAdDismissedFullScreenContent: (ad) async{
-              await _saveReminder();
-            },
-            onAdFailedToShowFullScreenContent: (ad, error) async {
-              await _saveReminder();
-            }
-          );
-          setState(() {
-            _interstitialAd = ad;
-          });
-        },
-         onAdFailedToLoad: (err) {
-          print('Failed to loads ad: ${err.message}');
-         }),);
-  }
-  
+  InterstitialAd? _interstitialAd;
 
   DateTime? _selectedDate;
   TimeOfDay? _selectedTime;
+  Reminder? _editingReminder;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadAd();
+  }
+
+  void _loadAd() {
+    InterstitialAd.load(
+      adUnitId: AdHelper.getInterstatialAdUnitId,
+      request: const AdRequest(),
+      adLoadCallback: InterstitialAdLoadCallback(
+        onAdLoaded: (ad) {
+          ad.fullScreenContentCallback = FullScreenContentCallback(
+            onAdDismissedFullScreenContent: (_) async {
+              await _saveReminder();
+            },
+            onAdFailedToShowFullScreenContent: (_, __) async {
+              await _saveReminder();
+            },
+          );
+          _interstitialAd = ad;
+        },
+        onAdFailedToLoad: (err) {
+          debugPrint('Failed to load ad: ${err.message}');
+        },
+      ),
+    );
+  }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-
     final Reminder? reminder =
         ModalRoute.of(context)?.settings.arguments as Reminder?;
     if (reminder != null && _titleController.text.isEmpty) {
+      _editingReminder = reminder;
       _titleController.text = reminder.title;
       _notesController.text = reminder.content;
       _selectedDate = DateTime.parse(reminder.dateTime);
@@ -65,7 +68,7 @@ class _AddReminderState extends State<AddReminder> {
   Future<void> _pickDate() async {
     final picked = await showDatePicker(
       context: context,
-      initialDate: DateTime.now(),
+      initialDate: _selectedDate ?? DateTime.now(),
       firstDate: DateTime.now(),
       lastDate: DateTime(2100),
     );
@@ -75,7 +78,7 @@ class _AddReminderState extends State<AddReminder> {
   Future<void> _pickTime() async {
     final picked = await showTimePicker(
       context: context,
-      initialTime: TimeOfDay.now(),
+      initialTime: _selectedTime ?? TimeOfDay.now(),
     );
     if (picked != null) setState(() => _selectedTime = picked);
   }
@@ -90,7 +93,7 @@ class _AddReminderState extends State<AddReminder> {
       return;
     }
 
-    final DateTime combinedDateTime = DateTime(
+    final combinedDateTime = DateTime(
       _selectedDate!.year,
       _selectedDate!.month,
       _selectedDate!.day,
@@ -98,42 +101,41 @@ class _AddReminderState extends State<AddReminder> {
       _selectedTime!.minute,
     );
 
-    final reminder = Reminder(
-      title: _titleController.text,
-      content: _notesController.text,
-      dateTime: combinedDateTime.toIso8601String(),
-    );
+    final provider = context.read<ReminderProvider>();
 
-    final existing =
-        ModalRoute.of(context)?.settings.arguments as Reminder?;
-    if (existing != null && existing.id != null) {
+    if (_editingReminder != null && _editingReminder!.id != null) {
       final updated = Reminder(
-        id: existing.id,
-        title: reminder.title,
-        content: reminder.content,
-        dateTime: reminder.dateTime,
+        id: _editingReminder!.id,
+        title: _titleController.text,
+        content: _notesController.text,
+        dateTime: combinedDateTime.toIso8601String(),
       );
-      await DatabaseHelper().updateReminder(updated);
+      await provider.updateReminder(updated);
     } else {
-      await DatabaseHelper().insertReminder(reminder);
+      final newReminder = Reminder(
+        title: _titleController.text,
+        content: _notesController.text,
+        dateTime: combinedDateTime.toIso8601String(),
+      );
+      await provider.addReminder(newReminder);
     }
 
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (context) => const Home()),
-    );
+    Navigator.pop(context); // just pop, Home will auto-refresh via Provider
   }
 
   @override
   Widget build(BuildContext context) {
-    final settings = Provider.of<SettingsProvider>(context);
+    final settings = context.watch<SettingsProvider>();
     final textColor = settings.fontColor;
 
     return Scaffold(
       appBar: AppBar(
         backgroundColor: settings.appBarColor,
-        iconTheme: IconThemeData(color: settings.fontColor),
-        title: Text('Add Reminder', style: TextStyle(color: settings.fontColor)),
+        iconTheme: IconThemeData(color: textColor),
+        title: Text(
+          _editingReminder != null ? 'Edit Reminder' : 'Add Reminder',
+          style: TextStyle(color: textColor),
+        ),
         centerTitle: true,
       ),
       backgroundColor: settings.backgroundColor,
@@ -144,7 +146,9 @@ class _AddReminderState extends State<AddReminder> {
             TextField(
               controller: _titleController,
               decoration: InputDecoration(
-                  labelText: 'Title', labelStyle: TextStyle(color: textColor)),
+                labelText: 'Title',
+                labelStyle: TextStyle(color: textColor),
+              ),
               style: TextStyle(color: textColor),
             ),
             const SizedBox(height: 10),
@@ -152,8 +156,9 @@ class _AddReminderState extends State<AddReminder> {
               controller: _notesController,
               maxLines: 3,
               decoration: InputDecoration(
-                  labelText: 'Notes (optional)',
-                  labelStyle: TextStyle(color: textColor)),
+                labelText: 'Notes (optional)',
+                labelStyle: TextStyle(color: textColor),
+              ),
               style: TextStyle(color: textColor),
             ),
             const SizedBox(height: 20),
@@ -179,15 +184,17 @@ class _AddReminderState extends State<AddReminder> {
             ),
             const SizedBox(height: 20),
             ElevatedButton.icon(
-              onPressed: () async {
-                if(_interstitialAd !=null){
-                _interstitialAd!.show();
+              onPressed: () {
+                if (_interstitialAd != null) {
+                  _interstitialAd!.show();
                 } else {
                   _saveReminder();
                 }
               },
               icon: const Icon(Icons.save),
-              label: const Text('Save Reminder'),
+              label: Text(
+                _editingReminder != null ? 'Update Reminder' : 'Save Reminder',
+              ),
               style: ElevatedButton.styleFrom(
                 minimumSize: const Size.fromHeight(50),
               ),

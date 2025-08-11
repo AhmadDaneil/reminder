@@ -14,7 +14,6 @@ class NotificationService {
     await requestPermission();
   }
 
-
   static Future<void> requestPermission() async {
     if (Platform.isAndroid) {
       final androidImplementation =
@@ -36,7 +35,7 @@ class NotificationService {
     }
   }
 
-  // Start (Persistent Notification)
+  /// Start (Persistent Reminder Notification with Date)
   static Future<void> showOngoingNotification({
     required String title,
     required String content,
@@ -50,8 +49,8 @@ class NotificationService {
       channelDescription: 'This channel is for ongoing reminders',
       importance: Importance.max,
       priority: Priority.high,
-      ongoing: true, // Makes it non-dismissible
-      autoCancel: false, // Prevents auto-removal
+      ongoing: true,
+      autoCancel: false,
       showWhen: true,
       category: AndroidNotificationCategory.reminder,
     );
@@ -59,15 +58,43 @@ class NotificationService {
     const details = NotificationDetails(android: androidDetails);
 
     await _notifications.show(
-      0, // Notification ID (we keep 0 so we can cancel it easily)
+      0,
       title,
       "$content\nTime: $formattedDate",
       details,
     );
   }
 
-  // Stop (Cancel Notification)
+  /// New: Persistent Note Notification (Title + Content only)
+  static Future<void> showNoteNotification({
+    required String title,
+    required String content,
+  }) async {
+    const androidDetails = AndroidNotificationDetails(
+      'note_channel',
+      'Notes',
+      channelDescription: 'This channel is for saved notes',
+      importance: Importance.max,
+      priority: Priority.high,
+      ongoing: true,
+      autoCancel: false,
+      showWhen: true,
+      styleInformation: BigTextStyleInformation(''), // Makes long notes expand
+    );
+
+    const details = NotificationDetails(android: androidDetails);
+
+    await _notifications.show(
+      1, // Different ID from reminders
+      title,
+      content,
+      details,
+    );
+  }
+
+  /// Stop (Cancel All Ongoing Notifications)
   static Future<void> cancelOngoingNotification() async {
-    await _notifications.cancel(0);
+    await _notifications.cancel(0); // Cancel reminder
+    await _notifications.cancel(1); // Cancel note
   }
 }

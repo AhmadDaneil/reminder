@@ -9,14 +9,18 @@ import 'package:reminder/screens/settings.dart';
 import 'package:reminder/services/settings_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:reminder/services/noti_service.dart';
+import 'package:reminder/services/reminder_provider.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   MobileAds.instance.initialize();
   await NotificationService.init();
   runApp(
-    ChangeNotifierProvider(
-    create: (_) => SettingsProvider(),
+    MultiProvider(
+      providers: [
+      ChangeNotifierProvider(create: (_) => SettingsProvider()),
+      ChangeNotifierProvider(create: (_) => ReminderProvider()..loadReminders()),
+      ],
     child: const MyApp(),
     )
   );
