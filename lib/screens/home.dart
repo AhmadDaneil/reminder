@@ -17,43 +17,56 @@ class Home extends StatefulWidget {
 class _HomeState extends State<Home> {
   List<Reminder> reminders = [];
   BannerAd? _bannerAd;
+  BannerAd? _bannerAd2;
 
   @override
   void initState() {
     super.initState();
-    BannerAd(
+    _loadAds();
+    _loadReminders();
+  }
+
+  void _loadAds() {
+    _bannerAd = BannerAd(
       adUnitId: AdHelper.bannerAdUnitId,
-      request: AdRequest(),
+      request: const AdRequest(),
       size: AdSize.banner,
       listener: BannerAdListener(
-        onAdLoaded: (ad) {
-          setState(() {
-            _bannerAd = ad as BannerAd;
-          });
-        },
+        onAdLoaded: (_) => setState(() {}),
         onAdFailedToLoad: (ad, err) {
-          print('Failed to load banner ad: ${err.message}');
+          debugPrint('Failed to load banner ad: ${err.message}');
           ad.dispose();
         },
       ),
-    ).load();
-    _loadReminders();
+    )..load();
+
+    _bannerAd2 = BannerAd(
+      adUnitId: AdHelper.bannerAdUnitId2,
+      request: const AdRequest(),
+      size: AdSize.banner,
+      listener: BannerAdListener(
+        onAdLoaded: (_) => setState(() {}),
+        onAdFailedToLoad: (ad, err) {
+          debugPrint('Failed to load banner ad: ${err.message}');
+          ad.dispose();
+        },
+      ),
+    )..load();
   }
 
   Future<void> _loadReminders() async {
     final data = await DatabaseHelper().getReminders();
-    setState(() {
-      reminders = data;
-    });
+    if (mounted) {
+      setState(() => reminders = data);
+    }
   }
 
   void _showReminderDialog(Reminder reminder) {
-    final settings = Provider.of<SettingsProvider>(context, listen: false);
-    final isDark = settings.isDarkmode;
+    final isDark = Provider.of<SettingsProvider>(context, listen: false).isDarkmode;
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (_) => AlertDialog(
         backgroundColor: isDark ? Colors.grey[900] : Colors.white,
         title: Text(reminder.title),
         content: Column(
@@ -68,23 +81,18 @@ class _HomeState extends State<Home> {
         ),
         actions: [
           TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-            },
+            onPressed: () => Navigator.pop(context),
             child: const Text('Back'),
           ),
           TextButton(
             onPressed: () async {
               Navigator.pop(context);
-
               final result = await Navigator.pushNamed(
                 context,
                 '/add_reminder',
                 arguments: reminder,
               );
-              if (result == true) {
-                _loadReminders();
-              }
+              if (result == true) _loadReminders();
             },
             child: const Text('Edit'),
           ),
@@ -96,7 +104,6 @@ class _HomeState extends State<Home> {
   Future<void> _deleteReminder(Reminder reminder) async {
     await DatabaseHelper().deleteReminder(reminder.id!);
     _loadReminders();
-
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('${reminder.title} deleted'),
@@ -109,6 +116,13 @@ class _HomeState extends State<Home> {
         ),
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    _bannerAd?.dispose();
+    _bannerAd2?.dispose();
+    super.dispose();
   }
 
   @override
@@ -126,138 +140,48 @@ class _HomeState extends State<Home> {
           if (_bannerAd != null)
             Align(
               alignment: Alignment.topCenter,
-              child: Container(
+              child: SizedBox(
                 width: _bannerAd!.size.width.toDouble(),
                 height: _bannerAd!.size.height.toDouble(),
                 child: AdWidget(ad: _bannerAd!),
+              ),
+            ),
+          if (_bannerAd2 != null)
+            Align(
+              alignment: Alignment.bottomCenter,
+              child: SizedBox(
+                width: _bannerAd2!.size.width.toDouble(),
+                height: _bannerAd2!.size.height.toDouble(),
+                child: AdWidget(ad: _bannerAd2!),
               ),
             ),
           reminders.isEmpty
               ? Center(
                   child: Text(
                     'No Reminders Yet',
-                    textAlign: TextAlign.center,
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 24.0,
-                      color:
-                          Theme.of(context).textTheme.bodyMedium!.color,
+                      color: Theme.of(context).textTheme.bodyMedium!.color,
                     ),
                   ),
                 )
               : ListView.builder(
                   padding: EdgeInsets.only(
-                    top: (_bannerAd != null
-                            ? _bannerAd!.size.height.toDouble()
-                            : 0) +
-                        16, // 👈 Push list down below banner
+                    top: (_bannerAd?.size.height.toDouble() ?? 0) + 16,
                     left: 16,
                     right: 16,
+                    bottom: (_bannerAd2?.size.height.toDouble() ?? 0) + 16,
                   ),
                   itemCount: reminders.length,
-                  itemBuilder: (context, index) {
+                  itemBuilder: (_, index) {
                     final reminder = reminders[index];
-
                     return Dismissible(
                       key: Key(reminder.id.toString()),
-                      background: Container(
-                        color: Colors.red,
-                        alignment: Alignment.centerLeft,
-                        padding:
-                            const EdgeInsets.symmetric(horizontal: 20.0),
-                        child: const Icon(Icons.delete, color: Colors.white),
-                      ),
-                      secondaryBackground: Container(
-                        color: Colors.red,
-                        alignment: Alignment.centerRight,
-                        padding:
-                            const EdgeInsets.symmetric(horizontal: 20.0),
-                        child: const Icon(Icons.delete, color: Colors.white),
-                      ),
-                      onDismissed: (direction) {
-                        _deleteReminder(reminder);
-                      },
-                      child: Card(
-                        elevation: 10.0,
-                        color: settings.isDarkmode
-                            ? Colors.black
-                            : Colors.white,
-                        margin:
-                            const EdgeInsets.symmetric(vertical: 8.0),
-                        child: ListTile(
-                          title: Text(
-                            reminder.title,
-                            style: TextStyle(
-                              color: settings.isDarkmode
-                                  ? Colors.white
-                                  : Colors.black,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          subtitle: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              if (reminder.content.isNotEmpty)
-                                Text(
-                                  reminder.content,
-                                  style: TextStyle(
-                                    color: settings.isDarkmode
-                                        ? Colors.white
-                                        : Colors.black,
-                                  ),
-                                ),
-                              const SizedBox(height: 4),
-                              Text(
-                                'DateTime: ${reminder.dateTime}',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: settings.isDarkmode
-                                      ? Colors.white
-                                      : Colors.black,
-                                ),
-                              ),
-                            ],
-                          ),
-                          trailing: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              IconButton(
-                                icon: const Icon(Icons.play_arrow,
-                                    color: Colors.green),
-                                onPressed: () {
-                                  NotificationService
-                                      .showOngoingNotification(
-                                    title: reminder.title,
-                                    content: reminder.content.isNotEmpty
-                                        ? reminder.content
-                                        : 'Reminder is active',
-                                    dateTime: DateTime.parse(
-                                        reminder.dateTime),
-                                  );
-                                },
-                              ),
-                              IconButton(
-                                icon: const Icon(Icons.stop,
-                                    color: Colors.red),
-                                onPressed: () {
-                                  NotificationService
-                                      .cancelOngoingNotification();
-                                },
-                              ),
-                              IconButton(
-                                icon: const Icon(Icons.delete,
-                                    color: Colors.red),
-                                onPressed: () {
-                                  _deleteReminder(reminder);
-                                },
-                              ),
-                            ],
-                          ),
-                          onTap: () {
-                            _showReminderDialog(reminder);
-                          },
-                        ),
-                      ),
+                      background: _buildDismissBg(Alignment.centerLeft),
+                      secondaryBackground: _buildDismissBg(Alignment.centerRight),
+                      onDismissed: (_) => _deleteReminder(reminder),
+                      child: _buildReminderCard(reminder, settings),
                     );
                   },
                 ),
@@ -265,14 +189,10 @@ class _HomeState extends State<Home> {
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () async {
-          final result =
-              await Navigator.pushNamed(context, '/add_reminder');
-          if (result == true) {
-            _loadReminders();
-          }
+          final result = await Navigator.pushNamed(context, '/add_reminder');
+          if (result == true) _loadReminders();
         },
-        backgroundColor:
-            settings.isDarkmode ? Colors.black : Colors.white,
+        backgroundColor: settings.isDarkmode ? Colors.black : Colors.white,
         elevation: 30.0,
         child: Icon(Icons.add,
             color: settings.isDarkmode ? Colors.white : Colors.black),
@@ -280,31 +200,99 @@ class _HomeState extends State<Home> {
       drawer: Drawer(
         child: ListView(
           children: [
-            ListTile(
-              title: const Text('Home'),
-              onTap: () async {
-                Navigator.pop(context);
-              },
-            ),
-            ListTile(
-              title: const Text('Notes'),
-              onTap: () async {
-                Navigator.pop(context);
-                Navigator.pushNamed(context, '/notes');
-                setState(() {});
-              },
-            ),
-            ListTile(
-              title: const Text('Settings'),
-              onTap: () async {
-                Navigator.pop(context);
-                Navigator.pushNamed(context, '/settings');
-                setState(() {});
-              },
-            ),
+            _buildDrawerItem('Home', () => Navigator.pop(context)),
+            _buildDrawerItem('Notes', () {
+              Navigator.pop(context);
+              Navigator.pushNamed(context, '/notes');
+            }),
+            _buildDrawerItem('Settings', () {
+              Navigator.pop(context);
+              Navigator.pushNamed(context, '/settings');
+            }),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildDismissBg(Alignment alignment) {
+    return Container(
+      color: Colors.red,
+      alignment: alignment,
+      padding: const EdgeInsets.symmetric(horizontal: 20.0),
+      child: const Icon(Icons.delete, color: Colors.white),
+    );
+  }
+
+  Widget _buildReminderCard(Reminder reminder, SettingsProvider settings) {
+    return Card(
+      elevation: 10.0,
+      color: settings.isDarkmode ? Colors.black : Colors.white,
+      margin: const EdgeInsets.symmetric(vertical: 8.0),
+      child: ListTile(
+        title: Text(
+          reminder.title,
+          style: TextStyle(
+            color: settings.isDarkmode ? Colors.white : Colors.black,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (reminder.content.isNotEmpty)
+              Text(
+                reminder.content,
+                style: TextStyle(
+                  color: settings.isDarkmode ? Colors.white : Colors.black,
+                ),
+              ),
+            const SizedBox(height: 4),
+            Text(
+              'DateTime: ${reminder.dateTime}',
+              style: TextStyle(
+                fontSize: 12,
+                color: settings.isDarkmode ? Colors.white : Colors.black,
+              ),
+            ),
+          ],
+        ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              icon: const Icon(Icons.play_arrow, color: Colors.green),
+              onPressed: () {
+                NotificationService.showOngoingNotification(
+                  title: reminder.title,
+                  content: reminder.content.isNotEmpty
+                      ? reminder.content
+                      : 'Reminder is active',
+                  dateTime: DateTime.parse(reminder.dateTime),
+                );
+              },
+            ),
+            IconButton(
+              icon: const Icon(Icons.stop, color: Colors.red),
+              onPressed: () {
+                NotificationService.cancelOngoingNotification();
+              },
+            ),
+            IconButton(
+              icon: const Icon(Icons.delete, color: Colors.red),
+              onPressed: () => _deleteReminder(reminder),
+            ),
+          ],
+        ),
+        onTap: () => _showReminderDialog(reminder),
+      ),
+    );
+  }
+
+  Widget _buildDrawerItem(String title, VoidCallback onTap) {
+    return ListTile(
+      title: Text(title),
+      onTap: onTap,
     );
   }
 }

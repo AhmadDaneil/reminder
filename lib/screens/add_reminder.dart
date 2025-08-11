@@ -28,7 +28,12 @@ class _AddReminderState extends State<AddReminder> {
       adLoadCallback: InterstitialAdLoadCallback(
         onAdLoaded: (ad) {
           ad.fullScreenContentCallback = FullScreenContentCallback(
-            onAdDismissedFullScreenContent: (ad){}
+            onAdDismissedFullScreenContent: (ad) async{
+              await _saveReminder();
+            },
+            onAdFailedToShowFullScreenContent: (ad, error) async {
+              await _saveReminder();
+            }
           );
           setState(() {
             _interstitialAd = ad;
@@ -175,9 +180,12 @@ class _AddReminderState extends State<AddReminder> {
             const SizedBox(height: 20),
             ElevatedButton.icon(
               onPressed: () async {
-                await _interstitialAd?.show();
-                await _saveReminder();
-                },
+                if(_interstitialAd !=null){
+                _interstitialAd!.show();
+                } else {
+                  _saveReminder();
+                }
+              },
               icon: const Icon(Icons.save),
               label: const Text('Save Reminder'),
               style: ElevatedButton.styleFrom(

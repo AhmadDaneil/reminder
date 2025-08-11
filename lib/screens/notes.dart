@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:reminder/services/ad_helper.dart';
 import 'package:reminder/services/settings_provider.dart';
 import 'package:reminder/services/database_helper.dart';
 import 'package:reminder/services/note_model.dart';
 import 'package:reminder/services/noti_service.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
 
 class Notes extends StatefulWidget {
   const Notes({super.key});
@@ -14,10 +16,27 @@ class Notes extends StatefulWidget {
 
 class _NotesState extends State<Notes> {
   List<Note> notes = [];
+  BannerAd? _bannerAd3;
 
   @override
   void initState() {
     super.initState();
+    BannerAd(
+      adUnitId: AdHelper.bannerAdUnitId3,
+      request: AdRequest(),
+      size: AdSize.banner,
+      listener: BannerAdListener(
+        onAdLoaded: (ad) {
+          setState(() {
+            _bannerAd3 = ad as BannerAd;
+          });
+        },
+        onAdFailedToLoad: (ad, err) {
+          print('Failed to load banner ad: ${err.message}');
+          ad.dispose();
+        },
+      ),
+    ).load();
     _loadNotes();
   }
 
@@ -134,108 +153,128 @@ class _NotesState extends State<Notes> {
         iconTheme: IconThemeData(color: settings.fontColor),
         elevation: 0,
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          children: [
-            TextField(
-              style: TextStyle(color: textColor),
-              decoration: InputDecoration(
-                prefixIcon: Icon(Icons.search, color: settings.fontColor),
-                hintText: 'Search Notes...',
-                hintStyle: TextStyle(color: textColor),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12)
-                ),
+      body: Stack(
+        children: [
+          if (_bannerAd3 != null)
+            Align(
+              alignment: Alignment.bottomCenter,
+              child: Container(
+                width: _bannerAd3!.size.width.toDouble(),
+                height: _bannerAd3!.size.height.toDouble(),
+                child: AdWidget(ad: _bannerAd3!),
               ),
             ),
-            const SizedBox(height: 16),
-
-            Expanded(
-              child: ListView.builder(
-                itemCount: notes.length,
-                itemBuilder: (context, index) {
-                  final note = notes[index];
-
-                  return Dismissible(
-                    key: Key(note.id.toString()),
-                    direction: DismissDirection.endToStart,
-                    onDismissed: (direction) async {
-                      await _deleteNote(note);
-                    }, 
-                    background: Container(
-                      color: Colors.red,
-                      alignment: Alignment.centerRight,
-                      padding: EdgeInsets.only(right: 20),
-                      child: Icon(Icons.delete, color: Colors.white),
-                    ),
-                    child: Card(
-                    color: settings.isDarkmode ? Colors.black : Colors.white,
-                    margin: const EdgeInsets.symmetric(vertical: 8),
-                    child: ListTile(
-                      title: Text(
-                        notes[index].title,
-                        style: TextStyle(color: settings.isDarkmode ? Colors.white : Colors.black, fontWeight: FontWeight.bold),
-                      ),
-                      subtitle: Text(
-                        notes[index].content,
-                        style: TextStyle(
-                          color: settings.isDarkmode ? Colors.white : Colors.black,
-                        ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      ),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(
-                            icon: Icon(
-                              note.isPinned ? Icons.push_pin : Icons.push_pin_outlined,
-                              color: note.isPinned ? Colors.orange : Colors.grey,
-                            ),
-                          onPressed: () async {
-                          final updatedNote = Note(
-                          id: note.id,
-                          title: note.title,
-                          content: note.content,
-                          createdAt: note.createdAt,
-                          isPinned: !note.isPinned,
-                          );
-
-                        await DatabaseHelper().updateNote(updatedNote);
-                        _loadNotes();
-
-                        if (updatedNote.isPinned) {
-                        // Show pinned note notification
-                        NotificationService.showOngoingNotification(
-                        title: updatedNote.title,
-                        content: updatedNote.content,
-                        dateTime: DateTime.parse(updatedNote.createdAt),
-                        );
-                        } else {
-                        // Remove notification
-                        NotificationService.cancelOngoingNotification();
-                        }
-                      },
-                    ),
-                    IconButton(icon: const Icon(Icons.delete, color: Colors.red),
-                    onPressed: () {
-                      _deleteNote(note);
-                      },
-                    ),
-                  ],
+        Padding(
+          padding: EdgeInsets.only(
+            bottom:(_bannerAd3 != null
+                            ? _bannerAd3!.size.height.toDouble()
+                            : 0) +
+                        16,
+            left: 16,
+            right: 16,
+          ),
+          child: Column(
+            children: [
+              TextField(
+                style: TextStyle(color: textColor),
+                decoration: InputDecoration(
+                  prefixIcon: Icon(Icons.search, color: settings.fontColor),
+                  hintText: 'Search Notes...',
+                  hintStyle: TextStyle(color: textColor),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12)
+                  ),
                 ),
-                onTap: (){
-                  _showEditDialog(notes[index]);
-                },
               ),
-            )
-          );
-        }
-      ),
-      ),
-      ]
-      )
+              const SizedBox(height: 16),
+        
+              Expanded(
+                child: ListView.builder(
+                  itemCount: notes.length,
+                  itemBuilder: (context, index) {
+                    final note = notes[index];
+        
+                    return Dismissible(
+                      key: Key(note.id.toString()),
+                      direction: DismissDirection.endToStart,
+                      onDismissed: (direction) async {
+                        await _deleteNote(note);
+                      }, 
+                      background: Container(
+                        color: Colors.red,
+                        alignment: Alignment.centerRight,
+                        padding: EdgeInsets.only(right: 20),
+                        child: Icon(Icons.delete, color: Colors.white),
+                      ),
+                      child: Card(
+                      color: settings.isDarkmode ? Colors.black : Colors.white,
+                      margin: const EdgeInsets.symmetric(vertical: 8),
+                      child: ListTile(
+                        title: Text(
+                          notes[index].title,
+                          style: TextStyle(color: settings.isDarkmode ? Colors.white : Colors.black, fontWeight: FontWeight.bold),
+                        ),
+                        subtitle: Text(
+                          notes[index].content,
+                          style: TextStyle(
+                            color: settings.isDarkmode ? Colors.white : Colors.black,
+                          ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        ),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              icon: Icon(
+                                note.isPinned ? Icons.push_pin : Icons.push_pin_outlined,
+                                color: note.isPinned ? Colors.orange : Colors.grey,
+                              ),
+                            onPressed: () async {
+                            final updatedNote = Note(
+                            id: note.id,
+                            title: note.title,
+                            content: note.content,
+                            createdAt: note.createdAt,
+                            isPinned: !note.isPinned,
+                            );
+        
+                          await DatabaseHelper().updateNote(updatedNote);
+                          _loadNotes();
+        
+                          if (updatedNote.isPinned) {
+                          // Show pinned note notification
+                          NotificationService.showOngoingNotification(
+                          title: updatedNote.title,
+                          content: updatedNote.content,
+                          dateTime: DateTime.parse(updatedNote.createdAt),
+                          );
+                          } else {
+                          // Remove notification
+                          NotificationService.cancelOngoingNotification();
+                          }
+                        },
+                      ),
+                      IconButton(icon: const Icon(Icons.delete, color: Colors.red),
+                      onPressed: () {
+                        _deleteNote(note);
+                        },
+                      ),
+                    ],
+                  ),
+                  onTap: (){
+                    _showEditDialog(notes[index]);
+                  },
+                ),
+              )
+            );
+          }
+        ),
+        ),
+        ]
+        )
+        ),
+        ],
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () async{
