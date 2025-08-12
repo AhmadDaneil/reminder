@@ -114,10 +114,12 @@ class SettingsPage extends StatelessWidget {
             child: const Text('Choose Title Color'),
             ),
             const SizedBox(height:50),
-            Text(
+            Center(
+              child: Text(
               'Version: 1.0.0',
-              style: TextStyle(color: settings.fontColor, fontWeight: FontWeight.bold),
+              style: TextStyle(color: settings.fontColor, fontWeight: FontWeight.bold, fontSize: 15,),
               ),
+            ),
           ],
         ),
       ),
